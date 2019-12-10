@@ -32,42 +32,72 @@
  // system defines
 #define DHTTYPE DHT22               // Sensor type DHT11/21/22/AM2301/AM2302
 #define DHTPIN D4                   // Digital pin for communications
-#define LOOP_DELAY 5000             // 5s loop interval
 
 // Instantiate DHT class
 PietteTech_DHT DHT(DHTPIN, DHTTYPE);
 
-// double celsius;
-double fahrenheit;
-double humidity;
+double temp;
+double tempSp;
+double tempSpDay;
+double tempSpNight;
+int hourDayStart = 8;
+int hourDayEnd = 20; // 8PM
+boolean lightStatus = false;
+boolean heatStatus = false;
+
+int lightPin = A0;
+int heatPin = A1;
+int updateMillis = 1000; // 1sec check
 
 void setup() {
     Serial.begin(9600);
     
     // Declare particle variables
-    //Particle.variable("celsius", celsius);
-    Particle.variable("fahrenheit", fahrenheit);
-    Particle.variable("humidity", humidity);
+    Particle.variable("temp", temp);
+    Particle.variable("tempSp", tempSp);
+    Particle.variable("tempSpDay", tempSpDay);
+    Particle.variable("tempSpNight", tempSpNight);
+    Particle.variable("hourDayStart", hourDayStart);
+    Particle.variable("hourDayEnd", hourDayEnd);
+    Particle.variable("lightStatus", lightStatus);
+    Particle.variable("heatStatus", heatStatus);
+
+    // Set up relay pins
+    pinMode(lightPin, OUTPUT);
+    pinMode(heatPin, OUTPUT);
     
-    // Set up 
+    // Set up sensor
     while (!Serial.available() && millis() < 30000) {
         Serial.println("Press any key to start.");
         Particle.process();
         delay(1000);
     }
-    Serial.println("DHT Simple program using DHT.acquireAndWait");
-    Serial.print("LIB version: ");
-    Serial.println(DHTLIB_VERSION);
-    Serial.println("---------------");
-    
-    // Start the sensor
     DHT.begin();
 }
 
 // Looping function. Runs periodically to update the variables internally so they are 
 // relatively current when requested via a variable request.
 void loop(void) {
-    
+    if(hourDayStart <= Time.hour() && Time.hour() < hourDayEnd){ // Daytime
+        if(!lightStatus) { // Turn on light
+            digitalWrite(lightPin, HIGH);
+            lightStatus = true;
+        }
+        // Set tempSp to tempSpDay
+    }
+    else { // Nighttime
+        if(lightStatus) { // Turn off light
+            digitalWrite(lightPin, LOW);
+            lightStatus = false;
+        }
+        // Set tempSp to tempSpNight
+    }
+
+    // Control heat to maintain temp at tempSp
+
+
+
+
     Serial.print("\n");
     Serial.print(": Retrieving information from sensor: ");
     Serial.print("Read sensor: ");
@@ -108,31 +138,9 @@ void loop(void) {
         Particle.publish("Error", error);
     }
     else {
-        // Serial.print("Humidity (%): ");
-        // Serial.println(DHT.getHumidity(), 2);
-        
-        // Serial.print("Temperature (oC): ");
-        // Serial.println(DHT.getCelsius(), 2);
-        
-        // Serial.print("Temperature (oF): ");
-        // Serial.println(DHT.getFahrenheit(), 2);
-        
-        // Serial.print("Temperature (K): ");
-        // Serial.println(DHT.getKelvin(), 2);
-        
-        // Serial.print("Dew Point (oC): ");
-        // Serial.println(DHT.getDewPoint());
-        
-        // Serial.print("Dew Point Slow (oC): ");
-        // Serial.println(DHT.getDewPointSlow());
-        
         // Assign to Particle variables
         fahrenheit = DHT.getFahrenheit();
         humidity = DHT.getHumidity();
-        
-        // Write to Particle events
-        //Particle.publish("fahrenheit", String(fahrenheit), PRIVATE); // publish to cloud
-        //Particle.publish("humidity", String(humidity), PRIVATE); // publish to cloud
     }
     
     delay(LOOP_DELAY); // 5 second delay
