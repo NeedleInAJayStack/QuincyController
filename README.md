@@ -1,6 +1,6 @@
-# DHT22sensor
+# Quincy Controller
 
-A Particle project named DHT22sensor
+Controls the light and temperature for my lizard Quincy
 
 ## Welcome to your project!
 
