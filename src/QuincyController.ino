@@ -29,20 +29,32 @@ power it gets more picky about the value.
 static DS18 ds18 = DS18(D4); 
 
 // Internal variables
-int lightPin = A0;
-int heatPin = A1;
+const int lightPin = A0;
+const int heatPin = A1;
+const int dataInterval = 5; // in seconds
 long dataReadTime;
-int dataInterval = 5; // in seconds
 boolean tempReadingStarted = false;
+
+// Set default variables
+const double tempSpDayDefault = 83; // 85 is ideal for highest temp at basking spot
+const double tempSpNightDefault = 70; // Drop of 10-15 degrees is ideal. Temps in 60s are ok.
+const int hourDayStartDefault = 8;
+const int hourDayEndDefault = 20; // 8PM
+
+// Set EEPROM memory addresses so that settings are persistent across restarts.
+const int tempSpDayAddr = 0; // double size = 8 bytes
+const int tempSpNightAddr = 8; // double size = 8 bytes
+const int hourDayStartAddr = 16; // int size = 2 bytes
+const int hourDayEndAddr = 18; // int size = 2 bytes
 
 // Particle variables
 double temp;
 double tempSp;
-double tempSpDay = 83; // 85 is ideal for highest temp at basking spot
-double tempSpNight = 70; // Drop of 10-15 degrees is ideal. Temps in 60s are ok.
+double tempSpDay;
+double tempSpNight;
 double tempDeadband = 2; // This is the +/- on the setpoint control
-int hourDayStart = 8;
-int hourDayEnd = 20; // 8PM
+int hourDayStart;
+int hourDayEnd;
 boolean lightStatus = false;
 boolean heatStatus = false;
 
@@ -58,9 +70,23 @@ void setup() {
   // Set up relay pins
   pinMode(lightPin, OUTPUT);
   pinMode(heatPin, OUTPUT);
+  // Set up temp sensor pins
+  pinMode(D3, OUTPUT); digitalWrite(D3, LOW);
+  pinMode(D5, OUTPUT); digitalWrite(D5, HIGH);
 
   Time.zone(-6); // Mountain Daylight timezone
+
+  // Read EEPROM values and set to default if needed
+  EEPROM.get(tempSpDayAddr, tempSpDay);
+  if(tempSpDay == 0) tempSpDay = tempSpDayDefault;
+  EEPROM.get(tempSpNightAddr, tempSpNight);
+  if(tempSpNight == 0) tempSpNight = tempSpNightDefault;
+  EEPROM.get(hourDayStartAddr, hourDayStart);
+  if(hourDayStart == 0) hourDayStart = hourDayStartDefault;
+  EEPROM.get(hourDayEndAddr, hourDayEnd);
+  if(hourDayEnd == 0) hourDayEnd = hourDayEndDefault;
   
+
   // Declare particle variables
   Particle.variable("temp", temp);
   Particle.variable("tempSp", tempSp);
@@ -132,6 +158,7 @@ int setTempSpDay(String command)
   if(newSp == 0.0) return -1; // atof returns 0.0 if its not a valid conversion. We shouldn't ever want a temp of 0 anyway...
   else {
     tempSpDay = newSp;
+    EEPROM.put(tempSpDayAddr, tempSpDay);
     return 1;
   }
 }
@@ -143,6 +170,7 @@ int setTempSpNight(String command)
   if(newSp == 0.0) return -1;
   else {
     tempSpNight = newSp;
+    EEPROM.put(tempSpNightAddr, tempSpNight);
     return 1;
   }
 }
@@ -154,6 +182,7 @@ int setHourDayStart(String command)
   if(newHour < 0 || newHour > 23 || newHour > hourDayEnd) return -1; // Don't allow settings that aren't 0-23 or are greater than hourDayEnd
   else {
     hourDayStart = newHour;
+    EEPROM.put(hourDayStartAddr, hourDayStart);
     return 1;
   }
 }
@@ -165,6 +194,7 @@ int setHourDayEnd(String command)
   if(newHour < 0 || newHour > 23 || newHour < hourDayStart) return -1; // Don't allow settings that aren't 0-23 or are less than hourDayStart
   else {
     hourDayEnd = newHour;
+    EEPROM.put(hourDayEndAddr, hourDayEnd);
     return 1;
   }
 }
