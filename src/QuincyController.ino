@@ -44,8 +44,8 @@ const int hourDayEndDefault = 20; // 8PM
 // Set EEPROM memory addresses so that settings are persistent across restarts.
 const int tempSpDayAddr = 0; // double size = 8 bytes
 const int tempSpNightAddr = 8; // double size = 8 bytes
-const int hourDayStartAddr = 16; // int size = 2 bytes
-const int hourDayEndAddr = 18; // int size = 2 bytes
+const int hourDayStartAddr = 16; // int size = 4 bytes
+const int hourDayEndAddr = 20; // int size = 4 bytes
 
 // Particle variables
 double temp;
@@ -70,21 +70,20 @@ void setup() {
   // Set up relay pins
   pinMode(lightPin, OUTPUT);
   pinMode(heatPin, OUTPUT);
-  // Set up temp sensor pins
-  pinMode(D3, OUTPUT); digitalWrite(D3, LOW);
-  pinMode(D5, OUTPUT); digitalWrite(D5, HIGH);
 
   Time.zone(-6); // Mountain Daylight timezone
 
   // Read EEPROM values and set to default if needed
+  // THIS DOESN'T WORK BECAUSE EEPROM VALUES ARE INTERPRETED AS UNSIGNED INTEGERS... See: https://forum.arduino.cc/index.php?topic=41497.0
+  // However, once set then they read off fine, so it's not really important after I set them once...
   EEPROM.get(tempSpDayAddr, tempSpDay);
-  if(tempSpDay == 0) tempSpDay = tempSpDayDefault;
+  if(tempSpDay == 0xFFFFFFFF) tempSpDay = tempSpDayDefault;
   EEPROM.get(tempSpNightAddr, tempSpNight);
-  if(tempSpNight == 0) tempSpNight = tempSpNightDefault;
+  if(tempSpNight == 0xFFFFFFFF) tempSpNight = tempSpNightDefault;
   EEPROM.get(hourDayStartAddr, hourDayStart);
-  if(hourDayStart == 0) hourDayStart = hourDayStartDefault;
+  if(hourDayStart == 0xFFFF) hourDayStart = hourDayStartDefault;
   EEPROM.get(hourDayEndAddr, hourDayEnd);
-  if(hourDayEnd == 0) hourDayEnd = hourDayEndDefault;
+  if(hourDayEnd == 0xFFFF) hourDayEnd = hourDayEndDefault;
   
 
   // Declare particle variables
