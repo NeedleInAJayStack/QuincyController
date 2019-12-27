@@ -55,8 +55,8 @@ double tempSpNight;
 double tempDeadband = 2; // This is the +/- on the setpoint control
 int hourDayStart;
 int hourDayEnd;
-boolean lightStatus = false;
-boolean heatStatus = false;
+int lightStatus = 0; // We do this as an int b/c particle variables can only be int, double, or String
+int heatStatus = 0;
 
 // Particle functions
 int setTempSpDay(String command);
@@ -107,17 +107,17 @@ void setup() {
 
 void loop(void) {
   if(hourDayStart <= Time.hour() && Time.hour() < hourDayEnd){ // Daytime
-    if(!lightStatus) { // Turn on light
+    if(lightStatus == 0) { // Turn on light
       digitalWrite(lightPin, HIGH);
-      lightStatus = true;
+      lightStatus = 1;
     }
     if(tempSp != tempSpDay) // Set tempSp to tempSpDay
       tempSp = tempSpDay;
   }
   else { // Nighttime
-    if(lightStatus) { // Turn off light
+    if(lightStatus == 1) { // Turn off light
       digitalWrite(lightPin, LOW);
-      lightStatus = false;
+      lightStatus = 0;
     }
     // Set tempSp to tempSpNight
     if(tempSp != tempSpNight) // Set tempSp to tempSpDay
@@ -133,13 +133,13 @@ void loop(void) {
       //Serial.print("Temperature: "); Serial.println(temperature, 2);
 
       // Control heat to maintain temp at tempSp
-      if(temp > (tempSp + tempDeadband) && heatStatus) { // Too high, turn off heat.
+      if(temp > (tempSp + tempDeadband) && heatStatus == 1) { // Too high, turn off heat.
         digitalWrite(heatPin, LOW);
-        heatStatus = false;
+        heatStatus = 0;
       }
-      else if(temp < (tempSp - tempDeadband) && !heatStatus) { // Too low, turn on heat.
+      else if(temp < (tempSp - tempDeadband) && heatStatus == 0) { // Too low, turn on heat.
         digitalWrite(heatPin, HIGH);
-        heatStatus = true;
+        heatStatus = 1;
       }
 
       dataReadTime = Time.now();
