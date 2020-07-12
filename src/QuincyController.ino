@@ -17,6 +17,7 @@ const int lightPin = A0;
 const int heatPin = A1;
 const int dataInterval = 5; // in seconds
 long dataReadTime;
+long timeSyncTime;
 boolean tempReadingStarted = false;
 
 // Set default variables
@@ -130,6 +131,12 @@ void loop(void) {
     }
 
     dataReadTime = Time.now();
+  }
+
+  // Request time synchronization from the Particle Device Cloud once per day
+  if(Time.now() - timeSyncTime > 24 * 60 * 60) {
+    Particle.syncTime();
+    timeSyncTime = Time.now();
   }
 }
 

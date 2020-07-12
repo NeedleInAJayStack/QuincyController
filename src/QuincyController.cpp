@@ -8,52 +8,49 @@
 Project: Quincy Controller
 Author:Jay Herron 
 Date: 2019-12-21
- 
-Use this sketch to read the temperature from 1-Wire devices
-you have attached to your Particle device (core, p0, p1, photon, electron)
 
-Temperature is read from: DS18S20, DS18B20, DS1822, DS2438
-
-I/O setup:
-These made it easy to just 'plug in' my 18B20
-
-D3 - 1-wire ground, or just use regular pin and comment out below.
-D4 - 1-wire signal, 2K-10K resistor to D5 (3v3)
-D5 - 1-wire power, ditto ground comment.
-
-A pull-up resistor is required on the signal line. The spec calls for a 4.7K.
-I have used 1K-10K depending on the bus configuration and what I had out on the
-bench. If you are powering the device, they all work. If you are using parasitic
-power it gets more picky about the value.
+See readme for details
 
 */
 
 #include <stdlib.h> // Used for String to int/double conversions
-#include "DS18.h"
-
+#include "adafruit-sht31.h"
 
 void setup();
 void loop(void);
-#line 29 "/home/jay/dev/particle/QuincyController/src/QuincyController.ino"
-static DS18 ds18 = DS18(D4); 
+#line 13 "/home/jay/dev/particle/QuincyController/src/QuincyController.ino"
+static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
 // Internal variables
-int lightPin = A0;
-int heatPin = A1;
+const int lightPin = A0;
+const int heatPin = A1;
+const int dataInterval = 5; // in seconds
 long dataReadTime;
-int dataInterval = 5; // in seconds
 boolean tempReadingStarted = false;
+
+// Set default variables
+const double tempSpDayDefault = 83; // 85 is ideal for highest temp at basking spot
+const double tempSpNightDefault = 70; // Drop of 10-15 degrees is ideal. Temps in 60s are ok.
+const int hourDayStartDefault = 8;
+const int hourDayEndDefault = 20; // 8PM
+
+// Set EEPROM memory addresses so that settings are persistent across restarts.
+const int tempSpDayAddr = 0; // double size = 8 bytes
+const int tempSpNightAddr = 8; // double size = 8 bytes
+const int hourDayStartAddr = 16; // int size = 4 bytes
+const int hourDayEndAddr = 20; // int size = 4 bytes
 
 // Particle variables
 double temp;
+double humidity;
 double tempSp;
-double tempSpDay = 83; // 85 is ideal for highest temp at basking spot
-double tempSpNight = 70; // Drop of 10-15 degrees is ideal. Temps in 60s are ok.
+double tempSpDay;
+double tempSpNight;
 double tempDeadband = 2; // This is the +/- on the setpoint control
-int hourDayStart = 8;
-int hourDayEnd = 20; // 8PM
-boolean lightStatus = false;
-boolean heatStatus = false;
+int hourDayStart;
+int hourDayEnd;
+int lightStatus = 0; // We do this as an int b/c particle variables can only be int, double, or String
+int heatStatus = 0;
 
 // Particle functions
 int setTempSpDay(String command);
@@ -68,10 +65,26 @@ void setup() {
   pinMode(lightPin, OUTPUT);
   pinMode(heatPin, OUTPUT);
 
+  if (!sht31.begin(0x44)) Serial.println("Couldn't find SHT31");
+
   Time.zone(-6); // Mountain Daylight timezone
+
+  // Read EEPROM values and set to default if needed
+  // THIS DOESN'T WORK BECAUSE EEPROM VALUES ARE INTERPRETED AS UNSIGNED INTEGERS... See: https://forum.arduino.cc/index.php?topic=41497.0
+  // However, once set then they read off fine, so it's not really important after I set them once...
+  EEPROM.get(tempSpDayAddr, tempSpDay);
+  if(tempSpDay == 0xFFFFFFFF) tempSpDay = tempSpDayDefault;
+  EEPROM.get(tempSpNightAddr, tempSpNight);
+  if(tempSpNight == 0xFFFFFFFF) tempSpNight = tempSpNightDefault;
+  EEPROM.get(hourDayStartAddr, hourDayStart);
+  if(hourDayStart == 0xFFFF) hourDayStart = hourDayStartDefault;
+  EEPROM.get(hourDayEndAddr, hourDayEnd);
+  if(hourDayEnd == 0xFFFF) hourDayEnd = hourDayEndDefault;
   
+
   // Declare particle variables
   Particle.variable("temp", temp);
+  Particle.variable("humidity", humidity);
   Particle.variable("tempSp", tempSp);
   Particle.variable("tempSpDay", tempSpDay);
   Particle.variable("tempSpNight", tempSpNight);
@@ -91,17 +104,17 @@ void setup() {
 
 void loop(void) {
   if(hourDayStart <= Time.hour() && Time.hour() < hourDayEnd){ // Daytime
-    if(!lightStatus) { // Turn on light
+    if(lightStatus == 0) { // Turn on light
       digitalWrite(lightPin, HIGH);
-      lightStatus = true;
+      lightStatus = 1;
     }
     if(tempSp != tempSpDay) // Set tempSp to tempSpDay
       tempSp = tempSpDay;
   }
   else { // Nighttime
-    if(lightStatus) { // Turn off light
+    if(lightStatus == 1) { // Turn off light
       digitalWrite(lightPin, LOW);
-      lightStatus = false;
+      lightStatus = 0;
     }
     // Set tempSp to tempSpNight
     if(tempSp != tempSpNight) // Set tempSp to tempSpDay
@@ -111,23 +124,21 @@ void loop(void) {
 
   // Only read data on correct intervals
   if(Time.now() - dataReadTime > dataInterval) {
-    // Read temp sensor
-    if(ds18.read()){
-      temp = ds18.fahrenheit();
-      //Serial.print("Temperature: "); Serial.println(temperature, 2);
+    temp = sht31.readTemperature()*9/5 + 32; // In Fahrenheit
+    //Serial.print("Temperature: "); Serial.println(temperature, 2);
+    humidity = sht31.readHumidity();
 
-      // Control heat to maintain temp at tempSp
-      if(temp > (tempSp + tempDeadband) && heatStatus) { // Too high, turn off heat.
-        digitalWrite(heatPin, LOW);
-        heatStatus = false;
-      }
-      else if(temp < (tempSp - tempDeadband) && !heatStatus) { // Too low, turn on heat.
-        digitalWrite(heatPin, HIGH);
-        heatStatus = true;
-      }
-
-      dataReadTime = Time.now();
+    // Control heat to maintain temp at tempSp
+    if(temp > (tempSp + tempDeadband) && heatStatus == 1) { // Too high, turn off heat.
+      digitalWrite(heatPin, LOW);
+      heatStatus = 0;
     }
+    else if(temp < (tempSp - tempDeadband) && heatStatus == 0) { // Too low, turn on heat.
+      digitalWrite(heatPin, HIGH);
+      heatStatus = 1;
+    }
+
+    dataReadTime = Time.now();
   }
 }
 
@@ -141,6 +152,7 @@ int setTempSpDay(String command)
   if(newSp == 0.0) return -1; // atof returns 0.0 if its not a valid conversion. We shouldn't ever want a temp of 0 anyway...
   else {
     tempSpDay = newSp;
+    EEPROM.put(tempSpDayAddr, tempSpDay);
     return 1;
   }
 }
@@ -152,6 +164,7 @@ int setTempSpNight(String command)
   if(newSp == 0.0) return -1;
   else {
     tempSpNight = newSp;
+    EEPROM.put(tempSpNightAddr, tempSpNight);
     return 1;
   }
 }
@@ -163,6 +176,7 @@ int setHourDayStart(String command)
   if(newHour < 0 || newHour > 23 || newHour > hourDayEnd) return -1; // Don't allow settings that aren't 0-23 or are greater than hourDayEnd
   else {
     hourDayStart = newHour;
+    EEPROM.put(hourDayStartAddr, hourDayStart);
     return 1;
   }
 }
@@ -174,6 +188,7 @@ int setHourDayEnd(String command)
   if(newHour < 0 || newHour > 23 || newHour < hourDayStart) return -1; // Don't allow settings that aren't 0-23 or are less than hourDayStart
   else {
     hourDayEnd = newHour;
+    EEPROM.put(hourDayEndAddr, hourDayEnd);
     return 1;
   }
 }
