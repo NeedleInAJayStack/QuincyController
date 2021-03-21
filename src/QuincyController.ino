@@ -13,14 +13,17 @@ See readme for details
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
 // Internal variables
-const int lightPin = A0;
-const int heatPin = A1;
-const int dataInterval = 5; // in seconds
-long dataReadTime;
-long timeSyncTime;
+const int lightOnPin = D8;
+const int lightOffPin = D7;
+const int heatOnPin = D6;
+const int heatOffPin = D5;
+long dataFetchedAt;
+const int dataFetchInterval = 5; // in seconds
+long timeSyncedAt;
+const int timeSyncInterval = 24 * 60 * 60; // 1 day in seconds
 boolean tempReadingStarted = false;
 
-// Set default variables
+// Set default adjustible variables
 const double tempSpDayDefault = 83; // 85 is ideal for highest temp at basking spot
 const double tempSpNightDefault = 70; // Drop of 10-15 degrees is ideal. Temps in 60s are ok.
 const int hourDayStartDefault = 8;
@@ -32,7 +35,7 @@ const int tempSpNightAddr = 8; // double size = 8 bytes
 const int hourDayStartAddr = 16; // int size = 4 bytes
 const int hourDayEndAddr = 20; // int size = 4 bytes
 
-// Particle variables
+// Particle variables/functions
 double temp;
 double humidity;
 double tempSp;
@@ -43,8 +46,6 @@ int hourDayStart;
 int hourDayEnd;
 int lightStatus = 0; // We do this as an int b/c particle variables can only be int, double, or String
 int heatStatus = 0;
-
-// Particle functions
 int setTempSpDay(String command);
 int setTempSpNight(String command);
 int setHourDayStart(String command);
@@ -53,28 +54,37 @@ int setHourDayEnd(String command);
 void setup() {
   Serial.begin(9600);
   
-  // Set up relay pins
-  pinMode(lightPin, OUTPUT);
-  pinMode(heatPin, OUTPUT);
+  pinMode(lightOnPin, OUTPUT);
+  pinMode(lightOffPin, OUTPUT);
+  pinMode(heatOnPin, OUTPUT);
+  pinMode(heatOffPin, OUTPUT);
 
-  if (!sht31.begin(0x44)) Serial.println("Couldn't find SHT31");
+  if (!sht31.begin(0x44)) {
+    Serial.println("Couldn't find SHT31");
+  }
 
   Time.zone(-6); // Mountain Daylight timezone
 
-  // Read EEPROM values and set to default if needed
-  // THIS DOESN'T WORK BECAUSE EEPROM VALUES ARE INTERPRETED AS UNSIGNED INTEGERS... See: https://forum.arduino.cc/index.php?topic=41497.0
+  // Read stored values and set to default if needed
+  // This doesn't work because EEPROM values are interpreted as unsigned integers... See: https://forum.arduino.cc/index.php?topic=41497.0
   // However, once set then they read off fine, so it's not really important after I set them once...
   EEPROM.get(tempSpDayAddr, tempSpDay);
-  if(tempSpDay == 0xFFFFFFFF) tempSpDay = tempSpDayDefault;
+  if (tempSpDay == 0xFFFFFFFF) {
+    tempSpDay = tempSpDayDefault;
+  }
   EEPROM.get(tempSpNightAddr, tempSpNight);
-  if(tempSpNight == 0xFFFFFFFF) tempSpNight = tempSpNightDefault;
+  if (tempSpNight == 0xFFFFFFFF) {
+    tempSpNight = tempSpNightDefault;
+  }
   EEPROM.get(hourDayStartAddr, hourDayStart);
-  if(hourDayStart == 0xFFFF) hourDayStart = hourDayStartDefault;
+  if (hourDayStart == 0xFFFF) {
+    hourDayStart = hourDayStartDefault;
+  }
   EEPROM.get(hourDayEndAddr, hourDayEnd);
-  if(hourDayEnd == 0xFFFF) hourDayEnd = hourDayEndDefault;
-  
+  if (hourDayEnd == 0xFFFF) {
+    hourDayEnd = hourDayEndDefault;
+  }
 
-  // Declare particle variables
   Particle.variable("temp", temp);
   Particle.variable("humidity", humidity);
   Particle.variable("tempSp", tempSp);
@@ -84,59 +94,48 @@ void setup() {
   Particle.variable("hourDayEnd", hourDayEnd);
   Particle.variable("lightStatus", lightStatus);
   Particle.variable("heatStatus", heatStatus);
-
-  // Declare functions
   Particle.function("setTempSpDay", setTempSpDay);
   Particle.function("setTempSpNight", setTempSpNight);
   Particle.function("setHourDayStart", setHourDayStart);
   Particle.function("setHourDayEnd", setHourDayEnd);
   
-  dataReadTime = Time.now();
+  // Set heat and light off, since we don't know what their last latching position is
+  turnLightOff();
+  turnHeatOff();
+
+  dataFetchedAt = Time.now();
+  timeSyncedAt = Time.now();
 }
 
 void loop(void) {
-  if(hourDayStart <= Time.hour() && Time.hour() < hourDayEnd){ // Daytime
-    if(lightStatus == 0) { // Turn on light
-      digitalWrite(lightPin, HIGH);
-      lightStatus = 1;
+  if (isDaytime()) {
+    tempSp = tempSpDay;
+    if (lightStatus == 0) {
+      turnLightOn();
     }
-    if(tempSp != tempSpDay) // Set tempSp to tempSpDay
-      tempSp = tempSpDay;
-  }
-  else { // Nighttime
-    if(lightStatus == 1) { // Turn off light
-      digitalWrite(lightPin, LOW);
-      lightStatus = 0;
+  } else {
+    tempSp = tempSpNight;
+    if (lightStatus == 1) {
+      turnLightOff();
     }
-    // Set tempSp to tempSpNight
-    if(tempSp != tempSpNight) // Set tempSp to tempSpDay
-      tempSp = tempSpNight;
   }
 
-
-  // Only read data on correct intervals
-  if(Time.now() - dataReadTime > dataInterval) {
+  if (Time.now() > dataFetchedAt + dataFetchInterval) {
     temp = sht31.readTemperature()*9/5 + 32; // In Fahrenheit
-    //Serial.print("Temperature: "); Serial.println(temperature, 2);
     humidity = sht31.readHumidity();
 
-    // Control heat to maintain temp at tempSp
-    if(temp > (tempSp + tempDeadband) && heatStatus == 1) { // Too high, turn off heat.
-      digitalWrite(heatPin, LOW);
-      heatStatus = 0;
-    }
-    else if(temp < (tempSp - tempDeadband) && heatStatus == 0) { // Too low, turn on heat.
-      digitalWrite(heatPin, HIGH);
-      heatStatus = 1;
+    if (temp < lowDeadbandEdge() && heatStatus == 0) {
+      turnHeatOn();
+    } else if (temp > lowDeadbandEdge() && heatStatus == 1) {
+      turnHeatOff();
     }
 
-    dataReadTime = Time.now();
+    dataFetchedAt = Time.now();
   }
 
-  // Request time synchronization from the Particle Device Cloud once per day
-  if(Time.now() - timeSyncTime > 24 * 60 * 60) {
+  if (Time.now() > timeSyncedAt + timeSyncInterval) {
     Particle.syncTime();
-    timeSyncTime = Time.now();
+    timeSyncedAt = Time.now();
   }
 }
 
@@ -144,11 +143,11 @@ void loop(void) {
 // PARTICLE FUNCTIONS
 
 // Sets the tempSpDay variable
-int setTempSpDay(String command)
-{
+int setTempSpDay(String command) {
   double newSp = atof(command); // Converts a Str to a double
-  if(newSp == 0.0) return -1; // atof returns 0.0 if its not a valid conversion. We shouldn't ever want a temp of 0 anyway...
-  else {
+  if (newSp == 0.0) {
+    return -1; // atof returns 0.0 if its not a valid conversion. We shouldn't ever want a temp of 0 anyway...
+  } else {
     tempSpDay = newSp;
     EEPROM.put(tempSpDayAddr, tempSpDay);
     return 1;
@@ -156,11 +155,11 @@ int setTempSpDay(String command)
 }
 
 // Sets the tempSpNight variable
-int setTempSpNight(String command)
-{
+int setTempSpNight(String command) {
   double newSp = atof(command);
-  if(newSp == 0.0) return -1;
-  else {
+  if (newSp == 0.0) {
+    return -1;
+  } else {
     tempSpNight = newSp;
     EEPROM.put(tempSpNightAddr, tempSpNight);
     return 1;
@@ -168,11 +167,11 @@ int setTempSpNight(String command)
 }
 
 // Sets the hourDayStart variable
-int setHourDayStart(String command)
-{
+int setHourDayStart(String command) {
   int newHour = atoi(command); // Converts a Str to an int
-  if(newHour < 0 || newHour > 23 || newHour > hourDayEnd) return -1; // Don't allow settings that aren't 0-23 or are greater than hourDayEnd
-  else {
+  if (newHour < 0 || newHour > 23 || newHour > hourDayEnd) {
+    return -1; // Don't allow settings that aren't 0-23 or are greater than hourDayEnd
+  } else {
     hourDayStart = newHour;
     EEPROM.put(hourDayStartAddr, hourDayStart);
     return 1;
@@ -180,13 +179,53 @@ int setHourDayStart(String command)
 }
 
 // Sets the hourDayEnd variable
-int setHourDayEnd(String command)
-{
+int setHourDayEnd(String command) {
   int newHour = atoi(command); // Converts a Str to an int
-  if(newHour < 0 || newHour > 23 || newHour < hourDayStart) return -1; // Don't allow settings that aren't 0-23 or are less than hourDayStart
-  else {
+  if (newHour < 0 || newHour > 23 || newHour < hourDayStart) {
+    return -1; // Don't allow settings that aren't 0-23 or are less than hourDayStart
+  } else {
     hourDayEnd = newHour;
     EEPROM.put(hourDayEndAddr, hourDayEnd);
     return 1;
   }
+}
+
+
+// HELPER FUNCTIONS
+bool isDaytime() {
+  return hourDayStart <= Time.hour() && Time.hour() < hourDayEnd;
+}
+
+double lowDeadbandEdge() {
+  return tempSp - tempDeadband;
+}
+
+double highDeadbandEdge() {
+  return tempSp + tempDeadband;
+}
+
+void turnLightOn() {
+  relaySet(lightOnPin);
+  lightStatus = 1;
+}
+
+void turnLightOff() {
+  relaySet(lightOffPin);
+  lightStatus = 0;
+}
+
+void turnHeatOn() {
+  relaySet(heatOnPin);
+  heatStatus = 1;
+}
+
+void turnHeatOff() {
+  relaySet(heatOffPin);
+  heatStatus = 0;
+}
+
+void relaySet(uint16_t pin) {
+  digitalWrite(pin, HIGH);
+  delay(200); // in milliseconds. Apparently, only 10ms is required, but I don't like living on the edge.
+  digitalWrite(pin, LOW);
 }
