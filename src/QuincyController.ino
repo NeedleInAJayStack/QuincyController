@@ -126,7 +126,7 @@ void loop(void) {
 
     if (temp < lowDeadbandEdge() && heatStatus == 0) {
       turnHeatOn();
-    } else if (temp > lowDeadbandEdge() && heatStatus == 1) {
+    } else if (temp > highDeadbandEdge() && heatStatus == 1) {
       turnHeatOff();
     }
 
