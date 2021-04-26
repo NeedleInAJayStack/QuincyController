@@ -12,24 +12,25 @@ See readme for details
 
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
-// Internal variables
+// PINs
 const int lightOnPin = D8;
 const int lightOffPin = D7;
 const int heatOnPin = D6;
 const int heatOffPin = D5;
+
+// Time-management variables
 long dataFetchedAt;
 const int dataFetchInterval = 5; // in seconds
 long timeSyncedAt;
 const int timeSyncInterval = 24 * 60 * 60; // 1 day in seconds
-boolean tempReadingStarted = false;
 
-// Set default adjustible variables
+// Adjustible control variables
 const double tempSpDayDefault = 83; // 85 is ideal for highest temp at basking spot
 const double tempSpNightDefault = 70; // Drop of 10-15 degrees is ideal. Temps in 60s are ok.
 const int hourDayStartDefault = 8;
 const int hourDayEndDefault = 20; // 8PM
 
-// Set EEPROM memory addresses so that settings are persistent across restarts.
+// EEPROM memory addresses for persistence across restarts.
 const int tempSpDayAddr = 0; // double size = 8 bytes
 const int tempSpNightAddr = 8; // double size = 8 bytes
 const int hourDayStartAddr = 16; // int size = 4 bytes
@@ -108,34 +109,15 @@ void setup() {
 }
 
 void loop(void) {
-  if (isDaytime()) {
-    tempSp = tempSpDay;
-    if (lightStatus == 0) {
-      turnLightOn();
-    }
-  } else {
-    tempSp = tempSpNight;
-    if (lightStatus == 1) {
-      turnLightOff();
-    }
+  controlLight();
+
+  if (shouldFetchData()) {
+    fetchData();
+    controlHeat();
   }
 
-  if (Time.now() > dataFetchedAt + dataFetchInterval) {
-    temp = sht31.readTemperature()*9/5 + 32; // In Fahrenheit
-    humidity = sht31.readHumidity();
-
-    if (temp < lowDeadbandEdge() && heatStatus == 0) {
-      turnHeatOn();
-    } else if (temp > highDeadbandEdge() && heatStatus == 1) {
-      turnHeatOff();
-    }
-
-    dataFetchedAt = Time.now();
-  }
-
-  if (Time.now() > timeSyncedAt + timeSyncInterval) {
-    Particle.syncTime();
-    timeSyncedAt = Time.now();
+  if (shouldSyncTime()) {
+    syncTime();
   }
 }
 
@@ -192,16 +174,35 @@ int setHourDayEnd(String command) {
 
 
 // HELPER FUNCTIONS
+
+// Sensor data
+bool shouldFetchData() {
+  return Time.now() > dataFetchedAt + dataFetchInterval;
+}
+
+void fetchData() {
+  temp = sht31.readTemperature()*9/5 + 32; // In Fahrenheit
+  humidity = sht31.readHumidity();
+  dataFetchedAt = Time.now();
+}
+
+// Light
+void controlLight() {
+  if (isDaytime()) {
+    tempSp = tempSpDay;
+    if (lightStatus == 0) {
+      turnLightOn();
+    }
+  } else {
+    tempSp = tempSpNight;
+    if (lightStatus == 1) {
+      turnLightOff();
+    }
+  }
+}
+
 bool isDaytime() {
   return hourDayStart <= Time.hour() && Time.hour() < hourDayEnd;
-}
-
-double lowDeadbandEdge() {
-  return tempSp - tempDeadband;
-}
-
-double highDeadbandEdge() {
-  return tempSp + tempDeadband;
 }
 
 void turnLightOn() {
@@ -214,6 +215,23 @@ void turnLightOff() {
   lightStatus = 0;
 }
 
+// Heat
+void controlHeat() {
+  if (temp < lowDeadbandEdge() && heatStatus == 0) {
+    turnHeatOn();
+  } else if (temp > highDeadbandEdge() && heatStatus == 1) {
+    turnHeatOff();
+  }
+}
+
+double lowDeadbandEdge() {
+  return tempSp - tempDeadband;
+}
+
+double highDeadbandEdge() {
+  return tempSp + tempDeadband;
+}
+
 void turnHeatOn() {
   relaySet(heatOnPin);
   heatStatus = 1;
@@ -224,8 +242,19 @@ void turnHeatOff() {
   heatStatus = 0;
 }
 
+// Relay
 void relaySet(uint16_t pin) {
   digitalWrite(pin, HIGH);
   delay(200); // in milliseconds. Apparently, only 10ms is required, but I don't like living on the edge.
   digitalWrite(pin, LOW);
+}
+
+// Online time sync
+bool shouldSyncTime() {
+  return Time.now() > timeSyncedAt + timeSyncInterval;
+}
+
+void syncTime() {
+  Particle.syncTime();
+  timeSyncedAt = Time.now();
 }
