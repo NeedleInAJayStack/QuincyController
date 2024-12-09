@@ -15,9 +15,11 @@ See readme for details
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
 // MQTT
+const char mqttDomain[] = "192.168.4.100";
+const uint16_t mqttPort = 1883;
 char mqttUser[] = MQTT_USER;
 char mqttPass[] = MQTT_PASS;
-MQTT client("192.168.4.100", 1883, callback);
+MQTT mqttClient(mqttDomain, mqttPort, callback);
 // Do nothing when a message is received
 void callback(char* topic, byte* payload, unsigned int length) {}
 
@@ -116,12 +118,12 @@ void setup() {
   dataFetchedAt = Time.now();
   timeSyncedAt = Time.now();
 
-  client.connect(System.deviceID(), mqttUser, mqttPass);
+  mqttClient.connect(System.deviceID(), mqttUser, mqttPass);
 }
 
 void loop(void) {
-  if (client.isConnected()) {
-    client.loop();
+  if (mqttClient.isConnected()) {
+    mqttClient.loop();
   }
 
   controlLight();
@@ -203,13 +205,13 @@ void fetchData() {
 }
 
 void publishData() {
-  if (client.isConnected()) {
+  if (mqttClient.isConnected()) {
     String mqttDevicePath = "particle/" + System.deviceID() + "/";
-    client.publish(mqttDevicePath + "temperature", String::format("%f", temp));
-    client.publish(mqttDevicePath + "humidity", String::format("%f", humidity));
-    client.publish(mqttDevicePath + "temperatureSetpoint", String::format("%f", tempSp));
-    client.publish(mqttDevicePath + "light", String::format("%d", lightStatus));
-    client.publish(mqttDevicePath + "heat", String::format("%d", heatStatus));
+    mqttClient.publish(mqttDevicePath + "temperature", String::format("%f", temp));
+    mqttClient.publish(mqttDevicePath + "humidity", String::format("%f", humidity));
+    mqttClient.publish(mqttDevicePath + "temperatureSetpoint", String::format("%f", tempSp));
+    mqttClient.publish(mqttDevicePath + "light", String::format("%d", lightStatus));
+    mqttClient.publish(mqttDevicePath + "heat", String::format("%d", heatStatus));
   }
 }
 
