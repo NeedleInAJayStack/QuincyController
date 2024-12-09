@@ -9,8 +9,17 @@ See readme for details
 
 #include <stdlib.h> // Used for String to int/double conversions
 #include "adafruit-sht31.h"
+#include "MQTT.h"
+#include "Secrets.h"
 
 static Adafruit_SHT31 sht31 = Adafruit_SHT31();
+
+// MQTT
+char mqttUser[] = MQTT_USER;
+char mqttPass[] = MQTT_PASS;
+MQTT client("192.168.4.100", 1883, callback);
+// Do nothing when a message is received
+void callback(char* topic, byte* payload, unsigned int length) {}
 
 // PINs
 const int lightOnPin = D8;
@@ -106,14 +115,21 @@ void setup() {
 
   dataFetchedAt = Time.now();
   timeSyncedAt = Time.now();
+
+  client.connect(System.deviceID(), mqttUser, mqttPass);
 }
 
 void loop(void) {
+  if (client.isConnected()) {
+    client.loop();
+  }
+
   controlLight();
 
   if (shouldFetchData()) {
     fetchData();
     controlHeat();
+    publishData();
   }
 
   if (shouldSyncTime()) {
@@ -184,6 +200,17 @@ void fetchData() {
   temp = sht31.readTemperature()*9/5 + 32; // In Fahrenheit
   humidity = sht31.readHumidity();
   dataFetchedAt = Time.now();
+}
+
+void publishData() {
+  if (client.isConnected()) {
+    String mqttDevicePath = "particle/" + System.deviceID() + "/";
+    client.publish(mqttDevicePath + "temperature", String::format("%f", temp));
+    client.publish(mqttDevicePath + "humidity", String::format("%f", humidity));
+    client.publish(mqttDevicePath + "temperatureSetpoint", String::format("%f", tempSp));
+    client.publish(mqttDevicePath + "light", String::format("%d", lightStatus));
+    client.publish(mqttDevicePath + "heat", String::format("%d", heatStatus));
+  }
 }
 
 // Light
