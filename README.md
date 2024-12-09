@@ -16,7 +16,7 @@ Controls the light and temperature for our lizard Quincy. The following componen
 
 ## Development
 
-When installing on a new computer, add a `Secrets.h` file that looks like:
+When developing on a new computer, add a `Secrets.h` file that looks like:
 
 ```cpp
 #define MQTT_USER "test"
