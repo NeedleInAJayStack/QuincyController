@@ -22,6 +22,8 @@ char mqttPass[] = MQTT_PASS;
 MQTT mqttClient(mqttDomain, mqttPort, callback);
 // Do nothing when a message is received
 void callback(char* topic, byte* payload, unsigned int length) {}
+long mqttLastReconnectionAttemptTime;
+const int mqttReconnectionInterval = 60; // in seconds
 
 // PINs
 const int lightOnPin = D8;
@@ -58,6 +60,7 @@ int hourDayStart;
 int hourDayEnd;
 int lightStatus = 0; // We do this as an int b/c particle variables can only be int, double, or String
 int heatStatus = 0;
+bool mqttConnected;
 int setTempSpDay(String command);
 int setTempSpNight(String command);
 int setHourDayStart(String command);
@@ -106,6 +109,7 @@ void setup() {
   Particle.variable("hourDayEnd", hourDayEnd);
   Particle.variable("lightStatus", lightStatus);
   Particle.variable("heatStatus", heatStatus);
+  Particle.variable("mqttConnected", mqttConnected);
   Particle.function("setTempSpDay", setTempSpDay);
   Particle.function("setTempSpNight", setTempSpNight);
   Particle.function("setHourDayStart", setHourDayStart);
@@ -119,11 +123,17 @@ void setup() {
   timeSyncedAt = Time.now();
 
   mqttClient.connect(System.deviceID(), mqttUser, mqttPass);
+  mqttLastReconnectionAttemptTime = Time.now();
 }
 
 void loop(void) {
-  if (mqttClient.isConnected()) {
+  mqttConnected = mqttClient.isConnected();
+  if (mqttConnected) {
     mqttClient.loop();
+  } else if (Time.now() - mqttLastReconnectionAttemptTime > mqttReconnectionInterval) {
+    // If MQTT is not connected, the system should continue to function, retrying connection in the background
+    mqttClient.connect(System.deviceID(), mqttUser, mqttPass);
+    mqttLastReconnectionAttemptTime = Time.now();
   }
 
   controlLight();
