@@ -1,6 +1,6 @@
 /*
 Project: Quincy Controller
-Author:Jay Herron 
+Author:Jay Herron
 Date: 2019-12-21
 
 See readme for details
@@ -16,7 +16,7 @@ static Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
 // MQTT
 const char mqttDomain[] = "192.168.4.100";
-const uint16_t mqttPort = 1883;
+const uint16_t mqttPort = 31883;
 char mqttUser[] = MQTT_USER;
 char mqttPass[] = MQTT_PASS;
 MQTT mqttClient(mqttDomain, mqttPort, callback);
@@ -68,7 +68,7 @@ int setHourDayEnd(String command);
 
 void setup() {
   Serial.begin(9600);
-  
+
   pinMode(lightOnPin, OUTPUT);
   pinMode(lightOffPin, OUTPUT);
   pinMode(heatOnPin, OUTPUT);
@@ -114,7 +114,7 @@ void setup() {
   Particle.function("setTempSpNight", setTempSpNight);
   Particle.function("setHourDayStart", setHourDayStart);
   Particle.function("setHourDayEnd", setHourDayEnd);
-  
+
   // Set heat and light off, since we don't know what their last latching position is
   turnLightOff();
   turnHeatOff();
